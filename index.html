@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HDD Forensics Lab</title>
+<style>
+/* ===================== tokens ===================== */
+:root{
+  --sans:"IBM Plex Sans","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono","IBM Plex Mono","SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;--r-sm:6px;
+  --bg:#0D1012;--surface:#14181B;--surface-2:#1A1F23;--surface-3:#232A2F;
+  --line:#272E33;--line-strong:#3A4248;
+  --text:#E6E8EA;--text-2:#B6BEC4;--muted:#8A949B;
+  --phys:#EE7A42;--phys-bg:rgba(238,122,66,.12);
+  --logi:#8F96F7;--logi-bg:rgba(143,150,247,.13);
+  --good:#3FB27F;--bad:#EC5A52;--warn:#DCA83F;--read:#6EA8FE;--focus:#9CC3FF;
+  --grid:rgba(255,255,255,.035);
+  --cell:#1F2529;--cell-meta:#3D5674;--cell-meta-t:#D6E2F2;--cell-ovw:#4C545A;--stripe:rgba(0,0,0,.6);
+  --drv-case:#1A1F23;--drv-case-s:#3A4248;--drv-in:#14181B;
+}
+:root[data-theme="light"]{
+  --bg:#F2F1ED;--surface:#FFFFFF;--surface-2:#F7F6F3;--surface-3:#ECEAE4;
+  --line:#E0DDD5;--line-strong:#C9C4B9;
+  --text:#15181B;--text-2:#3B4146;--muted:#5C646A;
+  --phys:#C2531E;--phys-bg:rgba(194,83,30,.09);
+  --logi:#4A50D0;--logi-bg:rgba(74,80,208,.08);
+  --good:#1E8654;--bad:#C63A32;--warn:#996700;--read:#2E6BD3;--focus:#2E6BD3;
+  --grid:rgba(0,0,0,.045);
+  --cell:#E7E4DD;--cell-meta:#9EB2CC;--cell-meta-t:#14243A;--cell-ovw:#959CA2;--stripe:rgba(255,255,255,.72);
+  --drv-case:#DDD9D1;--drv-case-s:#B4AEA2;--drv-in:#E9E6E0;
+}
+
+/* ===================== base ===================== */
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text)}
+body{font:17px/1.55 var(--sans);-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+h1,h2,h3,p{margin:0}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:4px}
+button{font:inherit;color:inherit}
+svg.ic{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+
+/* ===================== header ===================== */
+.appbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:24px;flex-wrap:wrap;
+  padding:0 28px;min-height:64px;background:var(--bg);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto;padding:10px 0;font-weight:600;font-size:16px}
+.brand svg{width:28px;height:28px}
+nav[role=tablist]{display:flex;align-self:stretch;flex-wrap:wrap}
+nav [role=tab]{display:flex;align-items:center;gap:9px;background:none;border:0;border-bottom:2px solid transparent;
+  padding:0 16px;min-height:62px;color:var(--muted);font-size:15px;cursor:pointer}
+nav [role=tab]:hover{color:var(--text)}
+nav [role=tab] .tn{font:500 11.5px var(--mono);border:1px solid var(--line-strong);border-radius:3px;padding:1px 5px}
+nav [role=tab][aria-selected=true]{color:var(--text);border-bottom-color:var(--text)}
+nav [role=tab][aria-selected=true] .tn{color:var(--bg);background:var(--text);border-color:var(--text)}
+.tools-r{display:flex;gap:6px}
+.iconbtn{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 12px;background:transparent;
+  border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--text-2);font-size:13.5px;cursor:pointer}
+.iconbtn:hover{background:var(--surface-2);color:var(--text)}
+
+/* ===================== guided stage ===================== */
+main{flex:1;display:flex}
+.tab-panel{display:none;flex:1;padding:26px 28px 28px;max-width:1500px;margin:0 auto;width:100%;flex-direction:column;gap:20px}
+.tab-panel.active{display:flex}
+.sec-top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.eyebrow{font:600 12px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.sec-top h1{font-size:28px;font-weight:600;letter-spacing:-.01em}
+.stage{flex:1;display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:20px;align-items:stretch}
+@media(max-width:1050px){.stage{grid-template-columns:1fr}}
+.visual{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:22px;display:flex;flex-direction:column;justify-content:center;gap:16px;min-width:0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:22px 22px}
+.caption{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:28px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.step-count{font:600 12.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.caption h2{font-size:30px;line-height:1.2;font-weight:600;letter-spacing:-.01em}
+.caption .lead{font-size:20px;line-height:1.5;color:var(--text-2)}
+.caption .fix{font-size:18px;line-height:1.5;padding:14px 16px;border-radius:var(--r-sm);background:var(--surface-2);border:1px solid var(--line)}
+.caption .fix b{display:block;font:600 11.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.tag{align-self:flex-start;font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:5px 10px;border-radius:4px;border:1px solid}
+.tag.phys{color:var(--phys);border-color:var(--phys);background:var(--phys-bg)}
+.tag.logi{color:var(--logi);border-color:var(--logi);background:var(--logi-bg)}
+.facts{display:flex;flex-wrap:wrap;gap:8px}
+.fact{font:500 14px var(--mono);padding:6px 12px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--text-2)}
+details{border-top:1px solid var(--line);padding-top:12px;color:var(--text-2);font-size:16px}
+summary{cursor:pointer;font:600 13px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);list-style:none;display:flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"+";display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:4px}
+details[open] summary::before{content:"−"}
+details>div{margin-top:10px}
+details ul{margin:0;padding-left:18px}
+.spacer{flex:1}
+.nav{display:flex;align-items:center;gap:12px}
+.dots{display:flex;gap:6px;flex:1;flex-wrap:wrap}
+.dot{width:28px;height:6px;border-radius:3px;background:var(--line-strong);border:0;padding:0;cursor:pointer}
+.dot.done{background:var(--text-2)}
+.dot.cur{background:var(--text)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 20px;
+  background:var(--surface-2);border:1px solid var(--line-strong);border-radius:var(--r-sm);color:var(--text);font-size:16px;cursor:pointer}
+.btn:hover{background:var(--surface-3)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn.primary{background:var(--text);border-color:var(--text);color:var(--bg);font-weight:600;min-width:150px}
+.btn.primary:hover{opacity:.88}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:var(--r-sm);overflow:hidden}
+.seg button{background:transparent;border:0;border-right:1px solid var(--line-strong);padding:0 16px;min-height:40px;cursor:pointer;color:var(--muted);font-size:14.5px}
+.seg button:last-child{border-right:0}
+.seg button[aria-selected=true]{background:var(--surface-3);color:var(--text)}
+
+/* ===================== drive SVG ===================== */
+.drive{width:100%;max-width:380px;height:auto;margin:0 auto;display:block;user-select:none;-webkit-user-select:none}
+.d-case{fill:var(--drv-case);stroke:var(--drv-case-s);stroke-width:1.5}
+.d-in{fill:var(--drv-in);stroke:var(--drv-case-s);stroke-width:1;opacity:.9}
+.d-screw{fill:var(--drv-case);stroke:var(--drv-case-s);stroke-width:1.2}
+.d-screw-x{stroke:var(--drv-case-s);stroke-width:1.2}
+.d-filter{fill:#2E3A36;stroke:#56685F;stroke-width:1}
+.d-flex{fill:none;stroke:#B5782E;stroke-width:6;stroke-linecap:round;opacity:.85}
+.d-conn{fill:#2A2F33;stroke:#555E65}
+.d-lbl{fill:var(--muted);font:500 9.5px var(--mono);letter-spacing:.12em}
+.d-track{fill:none;stroke:rgba(25,32,44,.16);stroke-width:1}
+.d-edge{fill:none;stroke:rgba(20,26,36,.35);stroke-width:1.2}
+.d-mark{stroke:#fff;stroke-width:2.5;stroke-linecap:round}
+.d-hub{fill:#8A93A0;stroke:#5B636D;stroke-width:1.2}
+.d-clamp{fill:#B4BCC6;stroke:#6E7680;stroke-width:1}
+.d-hubscrew{fill:#5B636D}
+.d-magnet{fill:#3B4249;stroke:#6A737B;stroke-width:1.2}
+.d-coil{fill:#B8823A;stroke:#7A5420;stroke-width:1}
+.d-coil-in{fill:var(--drv-in)}
+.d-armbody{fill:#9AA3AE;stroke:#636C76;stroke-width:1.2}
+.d-armhole{fill:var(--drv-in);opacity:.85}
+.d-susp{fill:#C9D0D8;stroke:#7D8690;stroke-width:.8}
+.d-head{fill:#E9EDF2;stroke:#3B424A;stroke-width:1}
+.d-pivot{fill:#6E7781;stroke:#B0B8C2;stroke-width:1.4}
+.d-pivot-in{fill:#3B424A}
+.d-ramp{fill:#3A3F45;stroke:#6A737B;stroke-width:1}
+.d-pcb{fill:#123A2B;stroke:#24684C;stroke-width:1.5}
+.d-trace{stroke:#2E8A63;stroke-width:1.4;fill:none;opacity:.6}
+.d-hole{fill:var(--bg);stroke:#2E8A63}
+.d-chip{fill:#151618;stroke:#4A4F55;stroke-width:1}
+.d-pin{stroke:#8C9298;stroke-width:1.2}
+.d-rom{fill:#151618;stroke:#8C9298;stroke-width:1}
+.d-tvs{fill:#33363A;stroke:#6E7378;stroke-width:1}
+.d-chiplbl{fill:#C7CDD3;font:600 8.5px var(--mono);letter-spacing:.06em}
+.d-zap{fill:var(--warn);stroke:#000;stroke-width:.6;opacity:0}
+.d-scratch{fill:none;stroke:var(--bad);stroke-width:3.5;stroke-dasharray:9 5;opacity:0;transition:opacity .3s}
+.d-bad rect{fill:var(--bad);opacity:0;transition:opacity .3s}
+.show-scratch .d-scratch{opacity:.95}
+.show-bad .d-bad rect{opacity:.95}
+.burnt .d-pcb{fill:#3A1210;stroke:var(--bad);animation:burn 1s infinite}
+.burnt .d-tvs{fill:#0A0A0A;stroke:var(--bad)}
+.burnt .d-zap{opacity:1;animation:burn .6s infinite}
+@keyframes burn{50%{opacity:.5}}
+.platter-g,.hub-g{transform-origin:178px 170px;transform-box:view-box}
+.platter-g.spin{animation:spin .55s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.arm{transform-origin:288px 336px;transform-box:view-box;transition:transform .5s cubic-bezier(.3,.7,.2,1)}
+.arm.rest{transform:rotate(0)}
+.arm.park{transform:rotate(17deg)}
+.arm.seek{animation:seek 1.8s ease-in-out infinite}
+@keyframes seek{0%,100%{transform:rotate(-10deg)}35%{transform:rotate(10deg)}65%{transform:rotate(-2deg)}}
+.arm.click{animation:clickarm .7s infinite}
+@keyframes clickarm{0%{transform:rotate(17deg)}14%{transform:rotate(-6deg)}28%{transform:rotate(17deg)}100%{transform:rotate(17deg)}}
+.drive [data-part]{transition:opacity .25s,filter .25s}
+.drive.focus [data-part]:not(.sel):not(.callout){opacity:.35}
+.drive [data-part].sel{filter:drop-shadow(0 0 4px var(--focus)) drop-shadow(0 0 1px var(--focus))}
+.callout circle{fill:var(--surface);stroke:var(--text-2);stroke-width:1.2}
+.callout text{fill:var(--text);font:600 10px var(--mono)}
+.callout{opacity:.45}
+.callout.sel{opacity:1;filter:none!important}
+.callout.sel circle{fill:var(--text);stroke:var(--text)}
+.callout.sel text{fill:var(--bg)}
+.leader{stroke:var(--text-2);stroke-width:1;stroke-dasharray:2 2}
+.drive-status{display:flex;align-items:center;justify-content:center;gap:8px;align-self:center;padding:9px 16px;border:1px solid currentColor;border-radius:var(--r-sm);font:600 14px var(--mono);background:var(--surface)}
+
+/* ===================== disk grids ===================== */
+.disk{display:grid;gap:4px}
+.cell{aspect-ratio:1;border-radius:3px;background:var(--cell);position:relative;font:600 9px var(--mono);
+  display:flex;align-items:center;justify-content:center;color:rgba(0,0,0,.6);transition:background .2s}
+.cell.meta{background:var(--cell-meta);color:var(--cell-meta-t)}
+.cell.alloc{background:var(--c)}
+.cell.del{background:repeating-linear-gradient(135deg,var(--c) 0 3px,var(--stripe) 3px 6px)}
+.cell.ovw{background:var(--cell-ovw);color:#F1F3F4}
+.cell.hdr::after{content:"";position:absolute;left:3px;top:3px;width:6px;height:6px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.cell.scan{outline:2px solid var(--focus);outline-offset:1px;z-index:2}
+.cell.s-good{background:var(--good)}
+.cell.s-bad{background:var(--bad)}
+.cell.s-skip{outline:2px dashed var(--warn);outline-offset:-2px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:14px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:14px;height:14px;border-radius:3px;display:inline-block;flex:none}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.file{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);font-size:15px}
+.file .dotc{width:12px;height:12px;border-radius:3px;flex:none}
+.file .nm{font:600 14px var(--mono)}
+.file .st{margin-left:auto;font:600 12px var(--mono);letter-spacing:.04em;white-space:nowrap}
+.st.ok{color:var(--good)}.st.bad{color:var(--bad)}.st.warn{color:var(--warn)}.st.dim{color:var(--muted)}
+.statrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stat{padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.stat .v{font:600 34px/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.stat .k{font:600 11.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+.bar{height:8px;border-radius:3px;background:var(--cell);overflow:hidden;margin-top:10px}
+.bar>div{height:100%;width:100%;background:var(--good);transition:width .2s,background .2s}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.compare .stat{padding:28px}
+.compare .stat .v{font-size:64px;margin:10px 0}
+
+/* ===================== accreditation visuals ===================== */
+.cards2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.acard{padding:22px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface-2);display:flex;flex-direction:column;gap:10px}
+.acard .who{font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.acard h3{font-size:24px;font-weight:600}
+.acard p{color:var(--text-2);font-size:16px}
+.rows{display:flex;flex-direction:column;gap:10px}
+.row{display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:center;padding:14px 18px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.row b{font:600 15px var(--mono)}
+.row span{color:var(--text-2)}
+.row.hi{border-color:var(--text-2);background:var(--surface-3)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.tile{padding:18px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.tile .n{font:600 26px var(--mono);color:var(--phys)}
+.tile b{display:block;margin:4px 0}
+.tile span{font-size:14.5px;color:var(--text-2)}
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.phase{padding:18px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);opacity:.45;transition:opacity .25s,border-color .25s}
+.phase.done{opacity:.75}
+.phase.cur{opacity:1;border-color:var(--text);background:var(--surface-3)}
+.phase .n{font:600 12px var(--mono);letter-spacing:.12em;color:var(--muted)}
+.phase b{display:block;font-size:19px;margin:6px 0}
+.phase span{font-size:14px;color:var(--text-2)}
+@media(max-width:800px){.timeline,.cards2,.compare{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}}
+.check{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);cursor:pointer;font-size:16px}
+.check input{width:20px;height:20px;accent-color:var(--good);flex:none}
+.verdict{font-size:22px;font-weight:600}
+
+footer{padding:0 28px 18px;font:12px var(--mono);color:var(--muted);text-align:center}
+@media(max-width:640px){.appbar{padding:0 16px;gap:8px}.tab-panel{padding:18px 16px}nav [role=tab]{padding:0 10px;min-height:48px}.caption{padding:20px}.caption h2{font-size:24px}.caption .lead{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.btn,.bar>div,.arm,.phase{transition:none}}
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="2.5" width="24" height="27" rx="3"/><circle cx="15" cy="13" r="8"/><circle cx="15" cy="13" r="1.8" fill="currentColor"/><path d="M24 25 L18 15" stroke-linecap="round"/><circle cx="24" cy="25" r="1.6" fill="currentColor"/></svg>
+    HDD Forensics Lab
+  </div>
+  <nav role="tablist" id="tabs" aria-label="Sections">
+    <button role="tab" data-tab="anatomy" aria-selected="true"><span class="tn">1</span>Anatomy</button>
+    <button role="tab" data-tab="failures" aria-selected="false"><span class="tn">2</span>Failures</button>
+    <button role="tab" data-tab="lab" aria-selected="false"><span class="tn">3</span>Recovery</button>
+    <button role="tab" data-tab="accreditation" aria-selected="false"><span class="tn">4</span>Accreditation</button>
+  </nav>
+  <div class="tools-r">
+    <button id="soundBtn" class="iconbtn" aria-pressed="true"></button>
+    <button id="themeBtn" class="iconbtn" aria-label="Switch colour theme"></button>
+  </div>
+</header>
+
+<main>
+<section id="anatomy" class="tab-panel active" role="tabpanel">
+  <div class="sec-top"><div><div class="eyebrow">Section 1</div><h1>Inside a hard drive</h1></div></div>
+  <div class="stage"><div class="visual" id="anaVisual"></div><div class="caption" id="anaCap"></div></div>
+</section>
+
+<section id="failures" class="tab-panel" role="tabpanel">
+  <div class="sec-top"><div><div class="eyebrow">Section 2</div><h1>Physical vs logical failure</h1></div></div>
+  <div class="stage"><div class="visual" id="failVisual"></div><div class="caption" id="failCap"></div></div>
+</section>
+
+<section id="lab" class="tab-panel" role="tabpanel">
+  <div class="sec-top">
+    <div><div class="eyebrow">Section 3</div><h1>Recovering the data</h1></div>
+    <div class="seg" role="tablist" aria-label="Demo">
+      <button role="tab" data-sub="logical" aria-selected="true">A · Deleted files</button>
+      <button role="tab" data-sub="physical" aria-selected="false">B · Failing drive</button>
+    </div>
+  </div>
+  <div class="stage"><div class="visual" id="labVisual"></div><div class="caption" id="labCap"></div></div>
+</section>
+
+<section id="accreditation" class="tab-panel" role="tabpanel">
+  <div class="sec-top"><div><div class="eyebrow">Section 4</div><h1>Accreditation</h1></div></div>
+  <div class="stage"><div class="visual" id="accVisual"></div><div class="caption" id="accCap"></div></div>
+</section>
+</main>
+
+<footer>Next: → / Space / clicker · Back: ← · Sections: 1–4 · Simplified teaching model</footer>
+
+<script>
+/* ===================== utilities ===================== */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const range=(a,b)=>Array.from({length:b-a},(_,i)=>a+i);
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const ic=d=>`<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICON={
+  warn:ic('<path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4.5M12 17.5h.01"/>'),
+  ok:ic('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.8 2.8L16.5 9.5"/>'),
+  snd:ic('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'),
+  mute:ic('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>'),
+  sun:ic('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>'),
+  moon:ic('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>')
+};
+
+/* SHA-256 (self-contained, works offline) */
+const SHA256=(()=>{const K=[],H0=[];let n=2,c=0;const frac=x=>((x-Math.floor(x))*4294967296)>>>0;
+  while(c<64){let p=true;for(let d=2;d*d<=n;d++)if(n%d===0){p=false;break}
+    if(p){if(c<8)H0[c]=frac(Math.pow(n,1/2));K[c]=frac(Math.pow(n,1/3));c++}n++}
+  const r=(x,k)=>(x>>>k)|(x<<(32-k));
+  return str=>{const by=new TextEncoder().encode(str),l=by.length,t=Math.ceil((l+9)/64)*64,m=new Uint8Array(t);
+    m.set(by);m[l]=0x80;const bits=l*8;m[t-4]=(bits>>>24)&255;m[t-3]=(bits>>>16)&255;m[t-2]=(bits>>>8)&255;m[t-1]=bits&255;
+    const H=H0.slice(),W=new Uint32Array(64);
+    for(let o=0;o<t;o+=64){
+      for(let i=0;i<16;i++)W[i]=(m[o+i*4]<<24|m[o+i*4+1]<<16|m[o+i*4+2]<<8|m[o+i*4+3])>>>0;
+      for(let i=16;i<64;i++){const x=W[i-15],y=W[i-2];W[i]=(W[i-16]+(r(x,7)^r(x,18)^(x>>>3))+W[i-7]+(r(y,17)^r(y,19)^(y>>>10)))>>>0}
+      let [a,b,cc,d,e,f,g,h]=H;
+      for(let i=0;i<64;i++){const t1=(h+(r(e,6)^r(e,11)^r(e,25))+((e&f)^(~e&g))+K[i]+W[i])>>>0;
+        const t2=((r(a,2)^r(a,13)^r(a,22))+((a&b)^(a&cc)^(b&cc)))>>>0;h=g;g=f;f=e;e=(d+t1)>>>0;d=cc;cc=b;b=a;a=(t1+t2)>>>0}
+      [a,b,cc,d,e,f,g,h].forEach((v,i)=>H[i]=(H[i]+v)>>>0)}
+    return H.map(x=>x.toString(16).padStart(8,'0')).join('')}})();
+
+/* ===================== theme & sound ===================== */
+function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem('hddlab-theme',t)}catch(e){}
+  $('#themeBtn').innerHTML=(t==='dark'?ICON.sun+'<span>Light</span>':ICON.moon+'<span>Dark</span>')}
+let savedTheme=null;try{savedTheme=localStorage.getItem('hddlab-theme')}catch(e){}
+setTheme(savedTheme==='light'?'light':'dark');
+$('#themeBtn').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+
+let AC=null,soundOn=true,sndTimers=[],curSound='none';
+function ac(){if(!AC){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;AC=new C()}if(AC.state==='suspended')AC.resume();return AC}
+function noiseClick(vol=.5){const a=ac();if(!a)return;const len=Math.floor(a.sampleRate*.025),buf=a.createBuffer(1,len,a.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3);
+  const s=a.createBufferSource();s.buffer=buf;const f=a.createBiquadFilter();f.type='bandpass';f.frequency.value=2200;f.Q.value=.8;
+  const g=a.createGain();g.gain.value=vol;s.connect(f);f.connect(g);g.connect(a.destination);s.start()}
+function stopSound(){sndTimers.forEach(clearInterval);sndTimers=[]}
+function playSound(kind){curSound=kind;stopSound();if(!soundOn||!kind||kind==='none')return;
+  if(kind==='click'){const fn=()=>{noiseClick(.6);setTimeout(()=>noiseClick(.45),140)};fn();sndTimers.push(setInterval(fn,700))}
+  else if(kind==='tick'){sndTimers.push(setInterval(()=>{if(Math.random()<.5)noiseClick(.3)},450))}}
+function renderSoundBtn(){const b=$('#soundBtn');b.innerHTML=(soundOn?ICON.snd+'<span>Sound on</span>':ICON.mute+'<span>Sound off</span>');b.setAttribute('aria-pressed',soundOn)}
+$('#soundBtn').onclick=()=>{soundOn=!soundOn;renderSoundBtn();if(soundOn&&curTab==='failures')playSound(curSound);else stopSound()};
+renderSoundBtn();
+
+/* ===================== drive SVG (3.5" proportions) ===================== */
+function driveSVG(p,callouts){
+  const cx=178,cy=170;
+  let marks='';for(let i=0;i<6;i++){const a=(i*60+17)*Math.PI/180,r1=44+(i%3)*24,r2=130;
+    marks+=`<line class="d-mark" x1="${(cx+Math.cos(a)*r1).toFixed(1)}" y1="${(cy+Math.sin(a)*r1).toFixed(1)}" x2="${(cx+Math.cos(a)*r2).toFixed(1)}" y2="${(cy+Math.sin(a)*r2).toFixed(1)}" opacity="${(.16+.1*(i%3)).toFixed(2)}"/>`}
+  let bad='';const R=mulberry32(11);for(let i=0;i<16;i++){const a=R()*Math.PI*2,r=52+R()*74;
+    bad+=`<rect x="${(cx+Math.cos(a)*r-3).toFixed(1)}" y="${(cy+Math.sin(a)*r-3).toFixed(1)}" width="6" height="6" rx="1"/>`}
+  let hubScrews='';for(let i=0;i<6;i++){const a=i*60*Math.PI/180;hubScrews+=`<circle cx="${(cx+Math.cos(a)*16).toFixed(1)}" cy="${(cy+Math.sin(a)*16).toFixed(1)}" r="2.4" class="d-hubscrew"/>`}
+  const screw=(x,y)=>`<circle cx="${x}" cy="${y}" r="5" class="d-screw"/><path d="M${x-2.6} ${y}h5.2M${x} ${y-2.6}v5.2" class="d-screw-x"/>`;
+  let pins='';for(let k=0;k<7;k++){const o=62+k*8;pins+=`<path d="M${o} 497v-3M${o} 559v3M55 ${o+441}h-3M117 ${o+441}h3" class="d-pin"/>`}
+  let romPins='';for(let k=0;k<4;k++){const x=199+k*8.5;romPins+=`<path d="M${x} 506v-3M${x} 524v3" class="d-pin"/>`}
+  let conPins='';for(let k=0;k<9;k++)conPins+=`<path d="M309 ${503+k*8.6}h12" class="d-pin" opacity=".7"/>`;
+  const co=(n,x,y,part)=>`<g class="callout" data-part="${part}"><circle cx="${x}" cy="${y}" r="9.5"/><text x="${x}" y="${y+3.6}" text-anchor="middle">${n}</text></g>`;
+  return `<svg viewBox="0 0 360 606" class="drive" id="${p}" role="img" aria-label="Schematic of a hard disk drive with its cover removed, and the circuit board from below">
+  <defs><radialGradient id="${p}-pg" cx="40%" cy="36%" r="72%"><stop offset="0" stop-color="#F1F4F8"/><stop offset=".5" stop-color="#B7C0CC"/><stop offset="1" stop-color="#6C7786"/></radialGradient></defs>
+  <rect x="30" y="20" width="300" height="434" rx="10" class="d-case"/>
+  <rect x="38" y="28" width="284" height="418" rx="6" class="d-in"/>
+  ${screw(46,36)}${screw(314,36)}${screw(46,438)}${screw(314,438)}${screw(46,250)}${screw(314,250)}
+  <rect x="46" y="352" width="22" height="50" rx="3" class="d-filter"/>
+  <g data-part="platter"><g class="platter-g" id="${p}-platter">
+    <circle cx="${cx}" cy="${cy}" r="136" fill="url(#${p}-pg)"/>
+    <circle cx="${cx}" cy="${cy}" r="135" class="d-edge"/>
+    <circle cx="${cx}" cy="${cy}" r="112" class="d-track"/><circle cx="${cx}" cy="${cy}" r="88" class="d-track"/><circle cx="${cx}" cy="${cy}" r="64" class="d-track"/><circle cx="${cx}" cy="${cy}" r="42" class="d-track"/>
+    ${marks}
+    <circle cx="${cx}" cy="${cy}" r="98" class="d-scratch"/>
+    <g class="d-bad">${bad}</g>
+  </g></g>
+  <g data-part="spindle"><g class="hub-g"><circle cx="${cx}" cy="${cy}" r="30" class="d-hub"/><circle cx="${cx}" cy="${cy}" r="23" class="d-clamp"/>${hubScrews}<circle cx="${cx}" cy="${cy}" r="5" class="d-hubscrew"/></g></g>
+  <g data-part="ramp"><path d="M303 136 L322 132 L322 170 L305 166 Z" class="d-ramp"/></g>
+  <g data-part="vcm"><path d="M320.4 384.1 A58 58 0 0 1 249.2 379.1 L274.6 350.9 A20 20 0 0 0 299.2 352.6 Z" class="d-magnet"/></g>
+  <path d="M268 346 C 240 352, 222 380, 222 436" class="d-flex"/>
+  <rect x="204" y="434" width="40" height="10" rx="2" class="d-conn"/>
+  <g class="arm rest" id="${p}-arm"><g transform="rotate(261.7 288 336)">
+    <g data-part="vcm"><path d="M276 324 L238 316 Q233 336 238 356 L276 348 Z" class="d-coil"/><path d="M270 328 L244 322 Q241 336 244 350 L270 344 Z" class="d-coil-in"/></g>
+    <g data-part="arm"><path d="M288 320 L436 331 L436 341 L288 352 Z" class="d-armbody"/><path d="M318 330 L392 333.5 L392 338.5 L318 342 Z" class="d-armhole"/>
+      <path d="M434 333 L470 335 L470 337 L434 339 Z" class="d-susp"/><circle cx="288" cy="336" r="15" class="d-pivot"/><circle cx="288" cy="336" r="6" class="d-pivot-in"/></g>
+    <g data-part="head"><rect x="467" y="331" width="12" height="10" rx="1.5" class="d-head"/></g>
+  </g></g>
+  <text x="76" y="430" class="d-lbl">TOP VIEW</text>
+  <text x="30" y="478" class="d-lbl">CIRCUIT BOARD · UNDERSIDE</text>
+  <g data-part="pcb"><rect x="30" y="486" width="300" height="112" rx="6" class="d-pcb"/>
+    <path d="M117 515 H196 M117 535 H140 M176 553 H262 M240 515 V553 M86 559 V582 H300 M284 528 H304" class="d-trace"/>
+    <circle cx="42" cy="498" r="4" class="d-hole"/><circle cx="42" cy="586" r="4" class="d-hole"/>
+    ${pins}<rect x="55" y="497" width="62" height="62" rx="3" class="d-chip"/><text x="86" y="531" class="d-chiplbl" text-anchor="middle">MCU</text>
+    <rect x="132" y="498" width="48" height="24" rx="2" class="d-chip"/><text x="156" y="513" class="d-chiplbl" text-anchor="middle">DRAM</text>
+    <rect x="132" y="532" width="48" height="40" rx="2" class="d-chip"/><text x="156" y="555" class="d-chiplbl" text-anchor="middle">MOTOR</text>
+    <rect x="304" y="498" width="22" height="84" rx="2" class="d-conn"/>${conPins}<text x="0" y="0" class="d-chiplbl" transform="translate(318 594)" text-anchor="middle">SATA</text></g>
+  <g data-part="rom">${romPins}<rect x="196" y="506" width="34" height="18" rx="2" class="d-rom"/><text x="213" y="518" class="d-chiplbl" text-anchor="middle">ROM</text></g>
+  <g data-part="tvs"><rect x="268" y="506" width="16" height="9" rx="1.5" class="d-tvs"/><rect x="268" y="522" width="16" height="9" rx="1.5" class="d-tvs"/><text x="276" y="546" class="d-chiplbl" text-anchor="middle">TVS</text></g>
+  <path d="M289 556 l-7 13 h6 l-3 11 l10 -15 h-6 l4 -9z" class="d-zap"/>
+  ${callouts?`<line x1="244" y1="140" x2="257" y2="149" class="leader"/><line x1="312" y1="123" x2="313" y2="134" class="leader"/>
+  ${co(1,88,94,'platter')}${co(2,236,134,'head')}${co(3,277.6,264.8,'arm')}${co(4,285,376,'vcm')}${co(5,178,170,'spindle')}${co(6,312,113,'ramp')}${co(7,252,580,'pcb')}${co(8,213,542,'rom')}${co(9,249,519,'tvs')}`:''}
+</svg>`}
+function applyAnim(p,a){const svg=$('#'+p);
+  $('#'+p+'-platter').setAttribute('class','platter-g'+(a.spin?' spin':''));
+  $('#'+p+'-arm').setAttribute('class','arm '+(a.arm||'park'));
+  svg.classList.toggle('show-scratch',!!a.scratch);svg.classList.toggle('show-bad',!!a.bad);svg.classList.toggle('burnt',!!a.pcb)}
+
+/* ===================== guided-step engine ===================== */
+const SECTIONS={};let curTab='anatomy';
+function guide(id,o){const g={id,i:0,dir:1,...o};SECTIONS[id]=g;return g}
+function caption(g,s){
+  const n=g.steps.length,last=g.i===n-1;
+  return `<div class="step-count">Step ${g.i+1} of ${n}</div>${s.tag||''}<h2>${s.title}</h2><p class="lead">${s.lead}</p>${s.fix?`<div class="fix"><b>How it’s recovered</b>${s.fix}</div>`:''}
+  ${s.facts?`<div class="facts">${s.facts.map(f=>`<span class="fact">${f}</span>`).join('')}</div>`:''}
+  ${s.more?`<details><summary>More detail</summary><div>${s.more}</div></details>`:''}
+  <div class="spacer"></div>
+  <div class="nav"><div class="dots">${g.steps.map((_,k)=>`<button class="dot ${k<g.i?'done':''} ${k===g.i?'cur':''}" data-k="${k}" aria-label="Step ${k+1}"></button>`).join('')}</div>
+  <button class="btn" data-act="back" ${g.i===0&&!g.prev?'disabled':''}>Back</button><button class="btn primary" data-act="next">${last?(g.nextLabel||'Next section'):'Next'} →</button></div>`}
+function show(g,i,dir=1){g.i=Math.max(0,Math.min(g.steps.length-1,i));g.dir=dir;
+  const s=g.steps[g.i];$(g.capEl).innerHTML=caption(g,s);
+  $$(g.capEl+' [data-k]').forEach(b=>b.onclick=()=>show(g,+b.dataset.k,+b.dataset.k>g.i?1:-1));
+  $(g.capEl+' [data-act=back]').onclick=()=>back(g);$(g.capEl+' [data-act=next]').onclick=()=>next(g);
+  g.render(s,g.i,dir)}
+function next(g){if(g.i<g.steps.length-1)show(g,g.i+1,1);else if(g.onEnd)g.onEnd()}
+function back(g){if(g.i>0)show(g,g.i-1,-1);else if(g.prev)g.prev()}
+
+/* ===================== 1 · anatomy ===================== */
+$('#anaVisual').innerHTML=driveSVG('ad',true);applyAnim('ad',{spin:true,arm:'rest'});
+const ana=guide('anatomy',{capEl:'#anaCap',steps:[
+ {parts:['platter'],title:'The platters hold the data',lead:'Rigid discs with a thin magnetic coating. Data is written as tiny magnetised areas in circular tracks.',more:'Some hidden tracks, called the service area, hold the drive’s own firmware. If the coating is scraped off in a head crash, the data there is gone for good.'},
+ {parts:['head','arm','vcm'],title:'The heads read and write',lead:'A head sits at the tip of the arm and flies a few nanometres above the spinning platter. A magnetic motor swings the arm across the tracks.',more:'That gap is far smaller than a speck of dust. A knock or dust can make the head touch the surface, which is a head crash.'},
+ {parts:['spindle'],title:'The motor spins the platters',lead:'Usually 5,400 or 7,200 times a minute. The spin creates the air cushion the heads float on.',more:'If the motor bearings seize, the drive hums but never spins up.'},
+ {parts:['ramp'],title:'The ramp parks the heads',lead:'When the drive stops, the heads slide onto this ramp so they never rest on the platter.',more:'If the heads fail to park they can stick to the surface. This is called stiction.'},
+ {parts:['pcb','rom','tvs'],title:'The circuit board runs it all',lead:'It runs the firmware and powers the motors. A small ROM chip stores calibration that is unique to this one drive.',more:'A power surge can burn the board. A spare board only works if the original ROM chip is moved onto it. The TVS diodes act like fuses and fail first.'}
+],render:s=>{$('#ad').classList.add('focus');$$('#ad [data-part]').forEach(el=>el.classList.toggle('sel',s.parts.includes(el.dataset.part)))}});
+ana.onEnd=()=>showTab('failures');
+
+/* ===================== 2 · failures ===================== */
+$('#failVisual').innerHTML=driveSVG('fd',false)+'<div class="drive-status" id="driveStatus"></div>';
+const PT='<span class="tag phys">Physical failure</span>',LT='<span class="tag logi">Logical failure</span>';
+const fail=guide('failures',{capEl:'#failCap',steps:[
+ {tag:PT,phys:1,anim:{spin:true,arm:'click',scratch:true},sound:'click',title:'Head crash',lead:'The drive was knocked while spinning and the head scraped the platter. You hear clicking.',fix:'Switch it off. In a cleanroom, fit heads from an identical donor drive, then copy the data.',facts:['Cleanroom needed','Scraped areas are lost'],more:'Each extra power-on can deepen the scratches. The donor must match the model, firmware version and factory site.'},
+ {tag:PT,phys:1,anim:{spin:false,arm:'park',pcb:true},title:'Burnt circuit board',lead:'A power surge burnt the board. The drive is silent and the computer cannot see it.',fix:'Fit a matching spare board and move the original ROM chip onto it, then copy the data.',facts:['No cleanroom','Move the ROM chip'],more:'Often only a TVS diode has failed, which a technician can find with a multimeter. A board swap without the ROM usually fails.'},
+ {tag:PT,phys:1,anim:{spin:true,arm:'seek',bad:true},sound:'tick',title:'Bad sectors',lead:'The magnetic surface is wearing out. The drive is slow and some areas cannot be read.',fix:'Copy it straight away with a tool like ddrescue, which saves the healthy areas first.',facts:['No cleanroom','Gets worse with use'],more:'Never run repair tools such as CHKDSK on it. Section 3, part B shows why the choice of copying tool matters.'},
+ {tag:LT,anim:{spin:true,arm:'seek'},title:'Deleted files',lead:'Someone deleted the files, but the drive itself works perfectly.',fix:'Make an exact copy (a forensic image), then read the file table. Deleted entries still point to the data.',facts:['Hardware healthy','Data still on the disk'],more:'Deleting only marks the space as free. The data survives until something new is written over it, so the drive must not be used.'},
+ {tag:LT,anim:{spin:true,arm:'seek'},title:'Quick format',lead:'The drive was formatted. The list of files is wiped, but the file contents are still there.',fix:'Search the raw data for known file signatures (called carving) to pull the files back out.',facts:['Hardware healthy','File names are lost'],more:'A full format on Windows Vista or later writes zeros over everything, and then the data is gone.'},
+ {tag:LT,anim:{spin:true,arm:'seek'},title:'Ransomware',lead:'Malware encrypted the files and left a ransom note.',fix:'If the computer is still on, capture its memory first because the keys may be there. Then look for a free decryptor and older backup copies.',facts:['Hardware healthy','Capture memory first'],more:'The No More Ransom project offers free decryptors for many strains. Windows shadow copies may hold versions from before the attack.'}
+],render:s=>{applyAnim('fd',s.anim);playSound(s.sound||'none');const st=$('#driveStatus');
+  st.innerHTML=(s.phys?ICON.warn+'<span>Hardware damaged</span>':ICON.ok+'<span>Hardware healthy</span>');st.style.color=s.phys?'var(--phys)':'var(--good)'}});
+fail.prev=()=>{showTab('anatomy');show(ana,ana.steps.length-1,-1)};fail.onEnd=()=>showTab('lab');
+
+/* ===================== 3A · deleted files (logical) ===================== */
+const LF=[
+ {name:'photo.jpg',sig:'FF D8 FF',color:'#D9A23A',clusters:range(5,14)},
+ {name:'report.pdf',sig:'%PDF',color:'#E0736B',clusters:range(17,26)},
+ {name:'invoice.docx',sig:'PK',color:'#5B9BD5',clusters:[...range(30,35),...range(58,62)]},
+ {name:'notes.txt',sig:null,color:'#A98BE0',clusters:range(42,47)}
+];
+const LN=80,ORIG=LF.map(f=>SHA256(f.clusters.map(i=>f.name+'#'+i).join('|')));
+const owner=Array(LN).fill(-1);LF.forEach((f,k)=>f.clusters.forEach(i=>owner[i]=k));
+let scanTok=0;
+function lState(i){
+  const st={del:i>=1,fmt:i>=3,ovw:new Set(i>=5?[8,9,10]:[]),rec:null};
+  const data=c=>st.ovw.has(c)?'NEW:'+c:(owner[c]>=0?LF[owner[c]].name+'#'+c:'00');
+  if(i===2)st.rec=LF.map((f,k)=>({name:f.name,ok:SHA256(f.clusters.map(data).join('|'))===ORIG[k],why:'name and location read from the file table'}));
+  if(i>=4)st.rec=LF.map((f,k)=>{if(!f.sig)return{name:f.name,miss:true,why:'no signature to search for'};
+    const read=range(f.clusters[0],f.clusters[0]+f.clusters.length);const ok=SHA256(read.map(data).join('|'))===ORIG[k];
+    const frag=!read.every((x,j)=>x===f.clusters[j]);
+    return{name:'f'+String(f.clusters[0]*8).padStart(5,'0')+'.'+f.name.split('.')[1],ok,why:ok?'found by its signature':frag?'stored in two pieces; the wrong part was read':'part of it was overwritten'}});
+  return st}
+function lRender(st){
+  const cells=range(0,LN).map(c=>{let cls='cell',txt='',sty='';
+    if(c<4){cls+=' meta';txt=st.fmt?'new':'FS'}
+    else if(st.ovw.has(c)){cls+=' ovw';txt='×'}
+    else if(owner[c]>=0){const f=LF[owner[c]];sty=`--c:${f.color}`;cls+=st.del?' del':' alloc';if(c===f.clusters[0]&&f.sig)cls+=' hdr'}
+    return `<div class="${cls}" style="${sty}">${txt}</div>`}).join('');
+  const table=st.fmt?'<span class="st dim">not listed</span>':st.del?'<span class="st warn">deleted</span>':'<span class="st ok">in use</span>';
+  const rec=st.rec?`<div class="files">${st.rec.map(r=>`<div class="file"><span>${r.miss?'–':r.ok?ICON.ok:ICON.warn}</span><div><div class="nm">${r.name}</div><div style="font-size:13px;color:var(--muted)">${r.why}</div></div><span class="st ${r.miss?'dim':r.ok?'ok':'bad'}">${r.miss?'NOT FOUND':r.ok?'HASH MATCH':'HASH FAIL'}</span></div>`).join('')}</div>`:'';
+  $('#labVisual').innerHTML=`<div class="disk" style="grid-template-columns:repeat(16,1fr)" id="ldisk">${cells}</div>
+   <div class="legend"><span><i class="sw" style="background:var(--cell-meta)"></i>File table</span><span><i class="sw" style="background:#D9A23A"></i>File in use</span><span><i class="sw" style="background:repeating-linear-gradient(135deg,#D9A23A 0 3px,var(--stripe) 3px 6px)"></i>Deleted, data still there</span><span><i class="sw" style="background:var(--cell-ovw)"></i>Overwritten</span></div>
+   <div class="eyebrow" style="margin:4px 0 -6px">What the file table says</div>
+   <div class="files">${LF.map(f=>`<div class="file"><i class="dotc" style="background:${f.color}"></i><span class="nm">${f.name}</span>${table}</div>`).join('')}</div>
+   ${rec?`<div class="eyebrow" style="margin:4px 0 -6px">Recovered</div>${rec}`:''}`}
+const labA=guide('logical',{capEl:'#labCap',steps:[
+ {title:'This is the evidence drive',lead:'Each square is a block of storage. The blue blocks are the file table, which lists where each file lives. The four coloured groups are four files.',facts:['4 files','Work on a copy only'],more:'Examiners never work on the seized drive itself. They make an exact copy and work on that.'},
+ {title:'The suspect deletes the files',lead:'The blocks turn striped because the file table now says “deleted”. The colour is still there: the data itself has not moved.',facts:['Deleted is not erased']},
+ {title:'Recover using the file table',lead:'The deleted entries still say where each file is, so all four come back with their real names. The hash check proves each one is identical to the original.',facts:['4 of 4 recovered','Names kept'],more:'A hash (SHA-256) is a digital fingerprint. If even one bit were different, the hash would not match.'},
+ {title:'Now the drive is quick-formatted',lead:'The file table is replaced with a new, empty one. The list of files is gone, but the coloured data is still on the disk.',facts:['File table wiped','Data still there']},
+ {title:'Carve the files by signature',lead:'With no file table, the tool scans for the bytes that start known file types. The photo and PDF come back. The document fails because it was stored in two pieces. The text file has no signature, so it is never found.',facts:['2 of 4 recovered','Names lost'],more:'Carved files are named by their position on the disk, which is why the names look like f00040.jpg.'},
+ {title:'The drive kept being used',lead:'New data landed on top of part of the photo. That part is gone for good, so the photo now fails its hash check.',facts:['Stop using the drive'],more:'This is why the first rule after data loss is to stop using the drive immediately.'}
+],render:async(s,i,dir)=>{const tok=++scanTok;const st=lState(i);
+  if(i===4&&dir>0){lRender(lState(3));const cells=$$('#ldisk .cell');
+    for(let c=4;c<LN;c++){if(tok!==scanTok)return;cells[c].classList.add('scan');await sleep(18);cells[c].classList.remove('scan')}}
+  if(tok===scanTok)lRender(st)}});
+
+/* ===================== 3B · failing drive (physical) ===================== */
+const P2={N:288,LIMIT:160,res:{},tok:0};
+function pInit(){const R=mulberry32(42);P2.rng=mulberry32(99);
+  P2.truth=Array(P2.N).fill('ok');for(let i=100;i<118;i++)P2.truth[i]=R()<.45?'dead':'weak';
+  for(let i=200;i<206;i++)P2.truth[i]='dead';[37,58,151,233,260,271].forEach(i=>P2.truth[i]='weak');
+  P2.st=Array(P2.N).fill('untried');P2.tries=Array(P2.N).fill(0);P2.stress=0}
+function pRead(i){const t=P2.truth[i],a=P2.tries[i]++;if(t==='ok')return true;if(t==='weak')return a>=1&&P2.rng()<.6;return false}
+function attempt(i,cost){const ok=pRead(i);if(!ok)P2.stress+=cost;return ok}
+const pct=()=>P2.st.filter(s=>s==='good').length/P2.N*100;
+const health=()=>Math.max(0,100-P2.stress/P2.LIMIT*100);
+function pDraw(){const cells=$$('#pdisk .cell');if(!cells.length)return;P2.st.forEach((s,i)=>cells[i].className='cell'+(s==='untried'?'':' s-'+s));
+  $('#pRes').textContent=pct().toFixed(1)+'%';const h=health();$('#pHealth').textContent=h.toFixed(0)+'%';
+  const b=$('#pBar');b.style.width=h+'%';b.style.background=h>60?'var(--good)':h>25?'var(--warn)':'var(--bad)'}
+// wait(ms) resolves false when the step was left; wait=null runs instantly
+async function runDd(wait){pInit();
+  for(let i=0;i<P2.N;i++){let ok=attempt(i,2),r=0;
+    while(!ok&&r<4&&P2.stress<P2.LIMIT){r++;if(wait&&!(await wait(55)))return false;ok=attempt(i,2);
+      if(!ok&&P2.rng()<.2){const j=i+1+Math.floor(P2.rng()*14);if(j<P2.N&&P2.truth[j]==='ok')P2.truth[j]='dead'}}
+    P2.st[i]=ok?'good':'bad';
+    if(P2.stress>=P2.LIMIT){P2.res.dd={pct:pct(),died:true};return true}
+    if(wait&&!(await wait(ok?5:30)))return false}
+  P2.res.dd={pct:pct(),died:false};return true}
+// ddrescue: phase 1 copies healthy areas and skips errors; later phases scrape and retry
+async function ddPass1(wait){pInit();let i=0;
+  while(i<P2.N){if(attempt(i,1)){P2.st[i]='good';i++;if(wait&&!(await wait(5)))return false}
+    else{const end=Math.min(P2.N,i+8);for(let j=i;j<end;j++)if(P2.st[j]!=='good')P2.st[j]='skip';i=end;if(wait&&!(await wait(30)))return false}}
+  return true}
+async function ddFinish(wait){
+  for(let k=0;k<P2.N;k++){if(P2.st[k]!=='skip')continue;P2.st[k]=attempt(k,1)?'good':'bad';if(wait&&!(await wait(20)))return false}
+  for(let r=0;r<2;r++)for(let k=0;k<P2.N;k++){if(P2.st[k]!=='bad')continue;P2.st[k]=attempt(k,1)?'good':'bad';if(wait&&!(await wait(35)))return false}
+  P2.res.ddr={pct:pct(),health:health()};return true}
+function pFrame(){$('#labVisual').innerHTML=`<div class="disk" style="grid-template-columns:repeat(24,1fr)" id="pdisk">${'<div class="cell"></div>'.repeat(P2.N)}</div>
+  <div class="legend"><span><i class="sw" style="background:var(--cell);border:1px solid var(--line-strong)"></i>Not read yet</span><span><i class="sw" style="background:var(--good)"></i>Copied</span><span><i class="sw" style="background:var(--cell);outline:2px dashed var(--warn);outline-offset:-2px"></i>Skipped for later</span><span><i class="sw" style="background:var(--bad)"></i>Unreadable</span></div>
+  <div class="statrow"><div class="stat"><div class="v" id="pRes">0%</div><div class="k">Data copied</div></div><div class="stat"><div class="v" id="pHealth">100%</div><div class="k">Drive health</div><div class="bar"><div id="pBar"></div></div></div></div>`}
+const labB=guide('physical',{capEl:'#labCap',steps:[
+ {title:'A failing drive',lead:'This drive has a damaged area in the middle and a few weak spots. Every read of a bad spot wears the heads a little more.',facts:['Same damage every run'],more:'The aim is to copy as much as possible before the drive gives out completely.'},
+ {title:'Plain copy (dd)',lead:'It reads from start to end and keeps retrying each bad spot. Watch the drive health fall. The drive dies before the end is ever reached.',facts:['Reads in order','Retries in place'],more:'Command: dd if=/dev/sdb of=evidence.img conv=noerror,sync'},
+ {title:'Forensic copy (ddrescue): first pass',lead:'ddrescue skips bad areas and copies all the healthy data first. Most of the drive is already safe.',facts:['Skips bad areas','Healthy data first'],more:'Command: ddrescue -d -r2 /dev/sdb evidence.img evidence.map. The map file records exactly which areas were read.'},
+ {title:'Forensic copy: finishing',lead:'Only now does it go back to the skipped areas, reading them sector by sector, then retrying the bad ones twice.',facts:['Map file lists every gap']},
+ {title:'The result',lead:'Same drive, same damage. The careful method saved far more data, and the drive survived.',facts:['Copy first, analyse later'],more:'These figures come from this simulation. Real results depend on the drive and the damage.'}
+],render:async(s,i,dir)=>{const tok=++P2.tok;const anim=dir>0;
+  const wait=anim?async ms=>{await sleep(ms/1.6);if(tok!==P2.tok)return false;pDraw();return true}:null;
+  if(i===4){await runDd(null);const dd=P2.res.dd.pct;await ddPass1(null);await ddFinish(null);const r=P2.res.ddr;
+    $('#labVisual').innerHTML=`<div class="compare"><div class="stat"><div class="k">Plain copy (dd)</div><div class="v" style="color:var(--bad)">${dd.toFixed(1)}%</div><div style="color:var(--text-2)">copied before the drive failed</div></div><div class="stat"><div class="k">ddrescue</div><div class="v" style="color:var(--good)">${r.pct.toFixed(1)}%</div><div style="color:var(--text-2)">copied, drive still working (${r.health.toFixed(0)}% health)</div></div></div>`;return}
+  pFrame();
+  if(i===0){pInit();pDraw();return}
+  if(i===1){if(await runDd(wait))pDraw();return}
+  if(i===2){if(await ddPass1(wait))pDraw();return}
+  if(i===3){await ddPass1(null);pDraw();if(await ddFinish(wait))pDraw()}}});
+
+let labSub='logical';
+function setSub(sub,stepIdx=0,dir=1){labSub=sub;scanTok++;P2.tok++;
+  $$('.seg [data-sub]').forEach(b=>b.setAttribute('aria-selected',b.dataset.sub===sub));
+  show(SECTIONS[sub],stepIdx,dir)}
+$$('.seg [data-sub]').forEach(b=>b.onclick=()=>setSub(b.dataset.sub));
+labA.nextLabel='Part B';labA.onEnd=()=>setSub('physical');labA.prev=()=>{showTab('failures');show(fail,fail.steps.length-1,-1)};
+labB.prev=()=>setSub('logical',labA.steps.length-1,-1);labB.onEnd=()=>showTab('accreditation');
+
+/* ===================== 4 · accreditation ===================== */
+const PHASES=[['Prepare','Scope, gap analysis, procedures, tool testing, staff training, internal audit'],['Apply','Application, fee, quality manual and proposed scope'],['Assessment','Document review, on-site visit, fixing any findings'],['Accredited','Certificate issued, then regular checks and reassessment']];
+const CHECKS=['Written procedures for every method','Tools tested on known data','Staff trained and authorised','Chain-of-custody records','Secure evidence store','Internal audit completed'];
+const timeline=k=>`<div class="timeline">${PHASES.map(([t,d],j)=>`<div class="phase ${j<k?'done':''} ${j===k?'cur':''}"><div class="n">PHASE ${j+1}</div><b>${t}</b><span>${d}</span></div>`).join('')}</div>`;
+const acc=guide('accreditation',{capEl:'#accCap',steps:[
+ {v:'cards',title:'Two kinds of recognition',lead:'Accreditation is for a laboratory. Certification is for a person. Courts look for both: an accredited lab with certified examiners.',more:'Ghana: Ghana Accreditation Service (GhAS). USA: ANAB, A2LA. UK: UKAS.'},
+ {v:'types',title:'Four types of accreditation',lead:'Each type has its own ISO standard. For a digital forensics lab, the one that matters most is ISO/IEC 17025.',more:'ISO/IEC 27037 is often mentioned too. It is guidance on handling digital evidence, not something a lab is accredited to.'},
+ {v:'reqs',title:'What ISO/IEC 17025 asks for',lead:'Write down how you work, follow it every time, and be able to prove it with records.',more:'The five areas are clauses 4 to 8 of ISO/IEC 17025:2017.'},
+ {v:'t0',title:'Phase 1: Prepare',lead:'Choose what to accredit, find the gaps, write the procedures, test every tool, train the staff, then audit yourself.',more:'<ul><li>Define the scope</li><li>Gap analysis</li><li>Build the management system</li><li>Validate methods and tools</li><li>Establish staff competence</li><li>Internal audit and management review</li></ul>'},
+ {v:'t1',title:'Phase 2: Apply',lead:'Send the application, fee, quality manual and the scope you want to a recognised accreditation body.'},
+ {v:'t2',title:'Phase 3: Assessment',lead:'Assessors read the documents, visit the lab, interview staff and watch real work. Any problems they find must be fixed before a deadline.',more:'Problems found by assessors are called nonconformities.'},
+ {v:'t3',title:'Phase 4: Accredited',lead:'The lab gets a certificate with a published scope. Regular check-up visits follow, with a full reassessment each cycle.',more:'Under ISO/IEC 17011 the full cycle is at most five years. Each body sets its own schedule.'},
+ {v:'check',title:'Is the lab ready to apply?',lead:'Tick what the lab can prove with records. All six are needed before applying.'}
+],render:s=>{let h='';
+  if(s.v==='cards')h=`<div class="cards2"><div class="acard"><div class="who">The laboratory</div><h3>Accreditation</h3><p>Proves the lab is competent for specific work, such as imaging hard drives.</p><p><b>Standard:</b> ISO/IEC 17025</p><p><b>Given by:</b> a national body, e.g. GhAS, UKAS, ANAB</p></div><div class="acard"><div class="who">The examiner</div><h3>Certification</h3><p>Proves a person has the knowledge and practical skill.</p><p><b>Examples:</b> CFCE, CCE, EnCE, GCFA, CHFI</p><p><b>Given by:</b> professional bodies and vendors</p></div></div>`;
+  if(s.v==='types')h=`<div class="rows">${[['ISO/IEC 17025','Testing laboratories: the main one for forensic labs',1],['ISO/IEC 17020','Inspection bodies, e.g. work at a scene'],['ISO/IEC 17024','Bodies that certify people'],['ISO/IEC 17011','The accreditation bodies themselves']].map(([a,b,hi])=>`<div class="row ${hi?'hi':''}"><b>${a}</b><span>${b}</span></div>`).join('')}</div>`;
+  if(s.v==='reqs')h=`<div class="tiles">${[['4','Impartial','No pressure from whoever pays'],['5','Organised','Clear roles and scope'],['6','Resourced','Trained staff, secure lab, checked tools'],['7','Reliable work','Tested methods, custody records, proficiency tests'],['8','Managed','Controlled documents, audits, reviews']].map(([n,b,d])=>`<div class="tile"><div class="n">${n}</div><b>${b}</b><span>${d}</span></div>`).join('')}</div>`;
+  if(s.v[0]==='t')h=timeline(+s.v[1]);
+  if(s.v==='check')h=`<div class="rows">${CHECKS.map((c,j)=>`<label class="check"><input type="checkbox" data-c="${j}">${c}</label>`).join('')}</div><div class="verdict" id="verdict"></div>`;
+  $('#accVisual').innerHTML=h;
+  if(s.v==='check'){const upd=()=>{const n=$$('#accVisual input:checked').length;$('#verdict').innerHTML=`${n} / 6: `+(n===6?'<span style="color:var(--good)">Ready to apply</span>':n>=4?'<span style="color:var(--warn)">Close, but gaps remain</span>':'<span style="color:var(--bad)">Not ready yet</span>')};
+    $$('#accVisual input').forEach(x=>x.onchange=upd);upd()}}});
+acc.prev=()=>{showTab('lab');setSub('physical',labB.steps.length-1,-1)};acc.nextLabel='Start again';acc.onEnd=()=>{showTab('anatomy');show(ana,0)};
+
+/* ===================== tabs & keys ===================== */
+function showTab(id){curTab=id;scanTok++;P2.tok++;
+  $$('.tab-panel').forEach(p=>p.classList.toggle('active',p.id===id));
+  $$('#tabs [role=tab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===id));
+  if(id!=='failures')stopSound();
+  if(id==='lab')setSub(labSub,SECTIONS[labSub].i,0);else show(SECTIONS[id],SECTIONS[id].i,0)}
+$$('#tabs [role=tab]').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+document.addEventListener('keydown',e=>{if(e.target.matches('input,select,textarea')||e.metaKey||e.ctrlKey||e.altKey)return;
+  const map={'1':'anatomy','2':'failures','3':'lab','4':'accreditation'};if(map[e.key]){showTab(map[e.key]);return}
+  const g=curTab==='lab'?SECTIONS[labSub]:SECTIONS[curTab];
+  if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();next(g)}
+  else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();back(g)}});
+show(ana,0);
+</script>
+</body>
+</html>
